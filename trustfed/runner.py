@@ -28,6 +28,7 @@ PRESETS = {
     "trustfed":          dict(aggregator="trust",  use_dp=True,  mu=0.01),
     # ablations (detection layer only)
     "abl_no_trust":      dict(aggregator="fedavg", use_dp=True,  mu=0.01),
+    "abl_uniform":       dict(aggregator="uniform", use_dp=True, mu=0.01),   # equal weights, no trust
     "abl_no_prox":       dict(aggregator="trust",  use_dp=True,  mu=0.0),
     "abl_no_dp":         dict(aggregator="trust",  use_dp=False, mu=0.01),
     "abl_no_kl":         dict(aggregator="trust",  use_dp=True,  mu=0.01, trust_use_kl=False),

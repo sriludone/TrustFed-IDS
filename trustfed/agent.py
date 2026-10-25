@@ -140,6 +140,11 @@ def policy_actions(name, S, P, sev_vec, b, q=None, true_sev=None, rng=None):
     if name == "severity_rule":                       # predicted class -> canonical action
         ps = np.asarray(sev_vec)[P.argmax(1)]
         return np.select([ps == 2, ps == 1], [BLOCK, ALERT], PASS)
+    if name == "bayes_rule":                          # expected-reward (cost-sensitive) decision rule
+        sv = np.asarray(sev_vec)
+        ps = np.stack([P[:, sv == v].sum(1) for v in (0, 1, 2)], 1)          # P(severity | x)
+        R = np.array([[reward(a, v) for v in (0, 1, 2)] for a in range(5)])  # reward table (5 x 3)
+        return (ps @ R.T).argmax(1)
     if name == "oracle":                              # true label -> canonical action (upper bound)
         return np.select([true_sev == 2, true_sev == 1], [BLOCK, ALERT], PASS)
     return rng.integers(0, 5, len(S))                 # random
@@ -182,7 +187,7 @@ def run_agents(fed, best_w, cfg, seed, trust_scores=None, verbose=True):
         q, curve = train_dqn(S_tr, [sevv[ya[e]] for e in tr_eps], cfg, seed + c["id"])
         curves[str(c["id"])] = curve
         res = {"client": c["id"], "trust": trust}
-        for pol in ("dqn", "threshold_rule", "severity_rule", "random", "oracle"):
+        for pol in ("dqn", "bayes_rule", "threshold_rule", "severity_rule", "random", "oracle"):
             A_, Sv = [], []
             for e in te_eps:
                 S = _states_for_episode(P_test[e], sevv, b, trust)
@@ -205,11 +210,11 @@ def run_agents(fed, best_w, cfg, seed, trust_scores=None, verbose=True):
             print(f"  [agent c{c['id']}] dqn acc={res['dqn']['action_accuracy']:.3f} "
                   f"sev_rule={res['severity_rule']['action_accuracy']:.3f} "
                   f"thr={res['threshold_rule']['action_accuracy']:.3f}", flush=True)
-    keys = ["action_accuracy", "benign_disruption_rate", "high_containment_rate",
+    keys = ["action_accuracy", "benign_disruption_rate", "benign_any_intervention", "high_containment_rate",
             "low_appropriate_rate", "missed_attack_rate", "mean_reward"]
     agg = {pol: {k: [float(np.mean([r[pol][k] for r in per_client if r[pol][k] is not None])),
                      float(np.std([r[pol][k] for r in per_client if r[pol][k] is not None]))]
-                 for k in keys} for pol in ("dqn", "threshold_rule", "severity_rule", "random", "oracle")}
+                 for k in keys} for pol in ("dqn", "bayes_rule", "threshold_rule", "severity_rule", "random", "oracle")}
     out = {"dataset": fed["dataset"], "seed": seed, "n_agents": len(per_client),
            "summary_mean_sd": agg, "per_client": per_client,
            "agent_ms_mean": float(np.mean([r["agent_ms"] for r in per_client])),

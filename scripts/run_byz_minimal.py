@@ -17,11 +17,13 @@ from trustfed.io import write_json
 ap = argparse.ArgumentParser()
 ap.add_argument("--device", default="cuda"); ap.add_argument("--results", default="results")
 ap.add_argument("--shard", default="0/1"); ap.add_argument("--dry-run", action="store_true")
+ap.add_argument("--attacks", nargs="*", default=["label_flip"],
+                help="any of: label_flip sign_flip model_replacement gaussian (all at 30%%)")
 a = ap.parse_args()
 cfg = yaml.safe_load(open("config.yaml")); cfg["device"] = a.device
 RULES = ["trustfed", "dp_fedavg", "multikrum", "fltrust", "flame"]
 runs = [r for r in R.plan("byzantine", cfg, cfg["datasets"], None, ["Edge-IIoTset"])
-        if r[2] in RULES and r[3] == "label_flip" and abs(r[4] - 0.3) < 1e-9 and r[5] == 1]
+        if r[2] in RULES and r[3] in a.attacks and abs(r[4] - 0.3) < 1e-9 and r[5] == 1]
 k, n = map(int, a.shard.split("/")); runs = [r for i, r in enumerate(runs) if i % n == k]
 todo = [r for r in runs if not os.path.exists(R.out_path(a.results, r))]
 print(f"{len(runs)} runs in this shard, {len(todo)} still to do")
@@ -31,7 +33,7 @@ if a.dry_run:
 cache = {}
 for i, r in enumerate(todo, 1):
     g, ds, m, atk, fr, st, alpha, s, ex = r
-    print(f"\n=== [{i}/{len(todo)}] {m} {ds} label_flip 30% seed={s}", flush=True)
+    print(f"\n=== [{i}/{len(todo)}] {m} {ds} {atk} 30% seed={s}", flush=True)
     if (ds, s) not in cache:
         cache.clear()
         cache[(ds, s)] = prepare_federation(ds, cfg["n_clients"], alpha, s, root_per_class=cfg["root_per_class"],

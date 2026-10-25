@@ -176,7 +176,7 @@ def dirichlet_partition(y, n_clients, alpha, rng, min_size=0, max_tries=1000):
 
 def prepare_federation(dataset, n_clients=20, alpha=0.5, seed=42, test_size=0.15,
                        val_frac=0.15, root_per_class=100, processed_dir=None, scaler="quantile",
-                       min_client_size=0, min_test_per_class=30, min_unique_patterns=10):
+                       min_client_size=0, min_test_per_class=30, min_unique_patterns=10, split="group"):
     """dataset 'CICIoT2023-8' = CICIoT2023 relabelled to its 8 official families.
     scaler: 'quantile' (default; robust to the heavy tails of flow features, fitted on
     the training pool only, output in [0,1]) or 'minmax'."""
@@ -215,6 +215,12 @@ def prepare_federation(dataset, n_clients=20, alpha=0.5, seed=42, test_size=0.15
     for c in range(len(class_names)):
         rows = np.where(y == c)[0]
         if len(rows) < 2:
+            continue
+        if split == "random":
+            # Comparison protocol only: ordinary class-stratified random split of rows,
+            # so identical feature vectors may fall on both sides (reported as `leak`).
+            target = int(round(max(test_size * len(rows), min(min_test_per_class, len(rows) // 3))))
+            test_mask[rng.permutation(rows)[:max(1, min(target, len(rows) - 1))]] = True
             continue
         g, inv, sizes = np.unique(grp[rows], return_inverse=True, return_counts=True)
         if len(g) < 2:
@@ -261,7 +267,8 @@ def prepare_federation(dataset, n_clients=20, alpha=0.5, seed=42, test_size=0.15
             "X_test": Xs[test], "y_test": y[test], "X_root": Xs[root], "y_root": y[root],
             "clients": clients, "seed": seed, "alpha": alpha,
             "test_class_counts": np.bincount(y[test], minlength=len(class_names)).tolist(),
-            "train_test_shared_feature_vectors": int(leak),
+            "train_test_shared_feature_vectors": int(leak), "split": split,
+            "test_rows_with_train_twin": int(np.isin(grp[test], grp[pool]).sum()),
             "dropped_classes": dropped_classes,
             "test_fraction_per_class": {class_names[c]: round(float((y[test] == c).sum() / max((y == c).sum(), 1)), 3)
                                         for c in range(len(class_names))},

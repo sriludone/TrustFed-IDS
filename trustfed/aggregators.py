@@ -16,6 +16,11 @@ def fedavg(ups, **_):
     return (_stack(ups) * (n / n.sum())[:, None]).sum(0), {"flagged": None}
 
 
+def uniform(ups, **_):
+    """Equal weight per participating client (no sample-size weighting, no trust)."""
+    return _stack(ups).mean(0), {"flagged": None}
+
+
 def weighted(ups, weights, **_):
     w = np.array([weights[u["cid"]] for u in ups])
     return (_stack(ups) * (w / w.sum())[:, None]).sum(0), {}
@@ -104,6 +109,6 @@ def foolsgold(ups, history, **_):
     return agg, {"flagged": [u["cid"] for j, u in enumerate(ups) if wv[j] < 0.01]}
 
 
-RULES = {"fedavg": fedavg, "krum": krum, "multikrum": multikrum, "median": median,
+RULES = {"fedavg": fedavg, "uniform": uniform, "krum": krum, "multikrum": multikrum, "median": median,
          "trimmed_mean": trimmed_mean, "flame": flame, "fltrust": fltrust,
          "foolsgold": foolsgold}
