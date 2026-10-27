@@ -1,7 +1,3 @@
-"""Quantifies train/test leakage WITHOUT training (laptop, minutes): for each dataset and
-seed, the share of test rows that have an identical feature vector in the training data
-under an ordinary random split versus the group-aware split used in the paper.
-   python scripts/leak_stats.py --datasets Edge-IIoTset CICIDS2017 --seeds 42 123 256"""
 import os, sys, argparse, json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import yaml

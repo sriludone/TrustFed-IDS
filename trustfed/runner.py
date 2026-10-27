@@ -1,15 +1,3 @@
-"""
-runner.py -- one federated training loop for EVERY FL method.
-
-Identical across methods: data split, client partition, per-round client
-selection, local training procedure, evaluation. Only the aggregation rule,
-DP on/off and the FedProx mu differ (see PRESETS).
-
-Model selection: federated validation (global model evaluated on the union of
-client validation splits). Early stopping and the reported round use VALIDATION
-balanced accuracy; test metrics are reported at that round. The original code
-selected the best round on the TEST set.
-"""
 import os, json, time, copy
 import numpy as np
 import torch
@@ -24,17 +12,17 @@ from .audit import AuditLedger, verify_chain, tamper_suite
 from .explain import shap_for_predicted
 
 PRESETS = {
-    # proposed method
+
     "trustfed":          dict(aggregator="trust",  use_dp=True,  mu=0.01),
-    # ablations (detection layer only)
+
     "abl_no_trust":      dict(aggregator="fedavg", use_dp=True,  mu=0.01),
-    "abl_uniform":       dict(aggregator="uniform", use_dp=True, mu=0.01),   # equal weights, no trust
+    "abl_uniform":       dict(aggregator="uniform", use_dp=True, mu=0.01),
     "abl_no_prox":       dict(aggregator="trust",  use_dp=True,  mu=0.0),
     "abl_no_dp":         dict(aggregator="trust",  use_dp=False, mu=0.01),
     "abl_no_kl":         dict(aggregator="trust",  use_dp=True,  mu=0.01, trust_use_kl=False),
     "abl_no_cos":        dict(aggregator="trust",  use_dp=True,  mu=0.01, trust_use_cos=False),
     "abl_no_ema":        dict(aggregator="trust",  use_dp=True,  mu=0.01, trust_use_ema=False),
-    # baselines
+
     "fedavg":            dict(aggregator="fedavg", use_dp=False, mu=0.0),
     "fedprox":           dict(aggregator="fedavg", use_dp=False, mu=0.01),
     "dp_fedavg":         dict(aggregator="fedavg", use_dp=True,  mu=0.0),
@@ -54,8 +42,6 @@ def _probe(n_features, n=512, seed=12345):
 
 def run_fl(fed, cfg, method, seed, attack="none", byz_frac=0.0, flip_rate=1.0,
            attack_start=1, attack_scale=5.0, force_dp=None, audit=False, audit_file=None, verbose=True):
-    """Returns (summary, best_weights, compact_round_log). Writes nothing except, when
-    audit_file is given, ONE compressed file with the run's SHAP vectors."""
     t_run = time.time()
     p = dict(PRESETS[method])
     use_dp = p["use_dp"] if force_dp is None else bool(force_dp)
@@ -70,11 +56,11 @@ def run_fl(fed, cfg, method, seed, attack="none", byz_frac=0.0, flip_rate=1.0,
     mal = set(range(n_mal))
     f_est = max(1, int(round(byz_frac * m))) if n_mal else max(1, int(0.2 * m))
 
-    # training-pool class histogram (aggregate counts; never the test set)
+
     ytr_all = np.concatenate([c["y_train"] for c in clients])
     class_w = sqrt_inv_freq_weights(ytr_all, nc)
 
-    # poisoned labels prepared once per malicious client (local RNG)
+
     y_poison = {}
     if A.needs_flipped_data(attack):
         for c in mal:
@@ -139,7 +125,7 @@ def run_fl(fed, cfg, method, seed, attack="none", byz_frac=0.0, flip_rate=1.0,
         if not ups:
             continue
 
-        # ---------------- aggregation
+
         info_agg, weights, signals, guard = {}, None, None, False
         rule = p["aggregator"]
         if rule == "trust":
@@ -166,7 +152,7 @@ def run_fl(fed, cfg, method, seed, attack="none", byz_frac=0.0, flip_rate=1.0,
             agg, info_agg = RULES[rule](ups, f=f_est)
         w_prev, w = w, (w + agg).astype(np.float32)
 
-        # ---------------- evaluation (selection on validation only)
+
         set_weights(eval_model, w)
         mv, _ = evaluate(predict_proba(eval_model, Xv), yv, nc, bidx)
         mt, _ = evaluate(predict_proba(eval_model, fed["X_test"]), fed["y_test"], nc, bidx)
@@ -203,7 +189,7 @@ def run_fl(fed, cfg, method, seed, attack="none", byz_frac=0.0, flip_rate=1.0,
             if patience >= cfg["early_stop_patience"]:
                 break
 
-    # ---------------- final report at the best VALIDATION round
+
     set_weights(eval_model, best_w)
     final, cm = evaluate(predict_proba(eval_model, fed["X_test"]), fed["y_test"], nc, bidx, with_report=True)
     eps = {str(k): round(dp_epsilon(v.get("sigma", cfg["dp_sigma"]), v["q"], v["steps"],

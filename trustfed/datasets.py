@@ -1,31 +1,3 @@
-"""
-datasets.py -- raw -> processed for the three paper datasets, with exact class
-definitions. Replaces raw_loaders.py for preprocessing.
-
-Output per dataset: data/processed/<DS>_processed.csv (f0..f{d-1}, label) and
-<DS>_meta.json (kept/dropped columns, dedup counts, class counts before/after
-capping). Everything a reviewer may ask about preprocessing is in the meta file.
-
-Pipeline (same order for every dataset):
-  1. read raw files (CICIoT2023: two-pass, class-uniform sampling across all files)
-  2. normalise label strings, apply the class definition (merges listed below)
-  3. drop identifier / leakage columns (explicit per-dataset list + patterns)
-  4. one-hot encode low-cardinality categorical protocol fields (Edge-IIoTset)
-  5. coerce to numeric, inf/NaN -> 0
-  6. resolve conflicting labels by majority; keep duplicates (default) -- the split is
-     group-aware so identical feature vectors never span train and test
-  7. per-class cap (only very large classes are reduced; rare classes kept whole)
-  8. drop constant columns
-
-CLASS DEFINITIONS
-  Edge-IIoTset (15): Normal + 14 attacks from Attack_type, unchanged.
-  CICIoT2023  (34): BenignTraffic + 33 attacks, unchanged. The 8-class family
-                    view (dataset name "CICIoT2023-8") is derived at load time
-                    by FAMILY_CICIOT (official CIC grouping).
-  CICIDS2017  (13): 15 raw labels; Heartbleed, Infiltration and
-                    Web Attack-Sql Injection (too few rows to train or test)
-                    merged into Rare_Attack -> 13 classes.
-"""
 import os, re, glob, json
 import numpy as np
 import pandas as pd
@@ -34,7 +6,7 @@ from .data import identifier_columns, deduplicate, PROCESSED_DIR, ROOT
 
 RAW_DIR = os.path.join(ROOT, "data", "raw")
 
-# ----------------------------------------------------------------- class maps
+
 FAMILY_CICIOT = {
     "BenignTraffic": "Benign",
     **{k: "DDoS" for k in ["DDoS-RSTFINFlood", "DDoS-PSHACK_Flood", "DDoS-SYN_Flood", "DDoS-UDP_Flood",
@@ -52,7 +24,7 @@ FAMILY_CICIOT = {
 }
 CICIDS_RARE = {"Heartbleed", "Infiltration", "Web Attack - Sql Injection"}
 
-# Edge-IIoTset attack categories as defined by its authors (Ferrag et al., 2022)
+
 FAMILY_EDGE = {"Normal": "Normal",
                **{k: "DoS_DDoS" for k in ["DDoS_UDP", "DDoS_ICMP", "DDoS_TCP", "DDoS_HTTP"]},
                **{k: "Information_gathering" for k in ["Port_Scanning", "Vulnerability_scanner", "Fingerprinting"]},
@@ -60,16 +32,16 @@ FAMILY_EDGE = {"Normal": "Normal",
                **{k: "Injection" for k in ["SQL_injection", "XSS", "Uploading"]},
                **{k: "Malware" for k in ["Backdoor", "Password", "Ransomware"]}}
 
-# dataset-name aliases that relabel a processed dataset to a coarser family view
+
 FAMILY_VIEWS = {"CICIoT2023-8": ("CICIoT2023", FAMILY_CICIOT),
                 "Edge-IIoTset-6": ("Edge-IIoTset", FAMILY_EDGE)}
 
-# ----------------------------------------------------------------- per-dataset settings
+
 SETTINGS = {
     "Edge-IIoTset": {
         "label_col": "Attack_type", "also_drop": ["Attack_label"],
-        # Ferrag et al. (2022) drop list + session identifiers (stream index, raw
-        # sequence numbers, checksums) that identify captures rather than behaviour.
+
+
         "drop": ["frame.time", "ip.src_host", "ip.dst_host", "arp.src.proto_ipv4",
                  "arp.dst.proto_ipv4", "http.file_data", "http.request.full_uri",
                  "icmp.transmit_timestamp", "http.request.uri.query", "tcp.options",
@@ -78,29 +50,28 @@ SETTINGS = {
                  "mbtcp.trans_id"],
         "onehot": ["http.request.method", "http.referer", "http.request.version",
                    "dns.qry.name.len", "mqtt.conack.flags", "mqtt.protoname", "mqtt.topic"],
-        "cap_per_class": 400_000,      # only Normal is reduced; every attack class kept whole
+        "cap_per_class": 400_000,
     },
     "CICIoT2023": {
         "label_col": "label", "drop": [], "onehot": [],
-        "two_pass": True,               # count labels first, then sample each class uniformly across ALL files
-        "cap_per_class": 60_000,       # ~1.5M rows for 34 classes; more data = less DP noise per client
+        "two_pass": True,
+        "cap_per_class": 60_000,
     },
     "CICIDS2017": {
         "label_col": "Label", "drop": ["Fwd Header Length.1"], "onehot": [],
-        "cap_per_class": 400_000,      # reduces BENIGN and DoS Hulk only
+        "cap_per_class": 400_000,
     },
 }
 
 
 def _norm_label(s):
     s = str(s).strip()
-    s = s.encode("ascii", "replace").decode().replace("?", "-")   # 'Web Attack � XSS'
+    s = s.encode("ascii", "replace").decode().replace("?", "-")
     s = re.sub(r"\s*-+\s*", " - ", s) if s.startswith("Web Attack") else s
     return re.sub(r"\s+", " ", s)
 
 
 def _shrink(df):
-    """float64 -> float32 right after reading: halves memory on 8 GB machines."""
     f = df.select_dtypes("float64").columns
     if len(f):
         df[f] = df[f].astype(np.float32)
@@ -108,8 +79,6 @@ def _shrink(df):
 
 
 def _read_files(paths, label_col, rows_per_file=None, seed=0, encoding=None, skip=()):
-    """skip: columns never loaded (the explicit drop list), so large text fields such as
-    Edge-IIoTset's tcp.payload never occupy memory."""
     rng = np.random.default_rng(seed); frames = []
     skip = {s.strip() for s in skip}
     for i, p in enumerate(sorted(paths)):
@@ -138,9 +107,6 @@ _CICIOT_CANON.update({_canon("Benign_Final"): "BenignTraffic", _canon("Benign"):
 
 
 def folder_label(path):
-    """CICIoT2023 per-attack folder release: class = name of the folder holding the CSV
-    (case/punctuation-insensitive, e.g. 'DDoS-PSHACK_FLOOD' -> 'DDoS-PSHACK_Flood',
-    'Benign_Final' -> 'BenignTraffic'). Returns None if the folder is not a known class."""
     for part in reversed(os.path.normpath(path).split(os.sep)[:-1]):
         lab = _CICIOT_CANON.get(_canon(part))
         if lab:
@@ -149,8 +115,6 @@ def folder_label(path):
 
 
 def _file_labels(p, label_col):
-    """('column', None) if the file has a label column, ('folder', label) if the class
-    comes from its folder, (None, None) if neither (file is skipped)."""
     head = pd.read_csv(p, nrows=0)
     if label_col in [c.strip() for c in head.columns]:
         return "column", None
@@ -159,9 +123,6 @@ def _file_labels(p, label_col):
 
 
 def _read_two_pass(paths, label_col, cap, seed=0):
-    """Pass 1 reads only the label column to count each class over all files. Pass 2
-    keeps each row of class c with probability min(1, 1.2*cap/count_c), so every class
-    is sampled uniformly across files and memory stays near (#classes x cap) rows."""
     rng = np.random.default_rng(seed); counts = {}; kind = {}; skipped = []
     modes = set()
     for p in sorted(paths):
@@ -246,7 +207,7 @@ def preprocess(ds, raw_dir=None, cap=None, keep=(), drop_extra=(), seed=0, dedup
             print(f"  [warn] labels not in the official 34-class list: {unknown}")
 
     header = [c.strip() for c in pd.read_csv(files[0], nrows=0, encoding_errors="replace").columns]
-    explicit = [c for c in st["drop"] if c in header]          # dropped at read time
+    explicit = [c for c in st["drop"] if c in header]
     df = df.drop(columns=[c for c in explicit if c in df.columns])
     pattern = [c for c in identifier_columns(df.columns, keep=keep) if c not in explicit]
     extra = [c for c in drop_extra if c in df.columns]
@@ -255,7 +216,7 @@ def preprocess(ds, raw_dir=None, cap=None, keep=(), drop_extra=(), seed=0, dedup
     onehot = [c for c in st["onehot"] if c in df.columns]
     if onehot:
         df[onehot] = df[onehot].astype(str).fillna("NA")
-        top = {c: df[c].value_counts().index[:20] for c in onehot}     # bound cardinality
+        top = {c: df[c].value_counts().index[:20] for c in onehot}
         for c in onehot:
             df[c] = df[c].where(df[c].isin(top[c]), "other")
         df = pd.get_dummies(df, columns=onehot, prefix=onehot, dtype=np.float32)

@@ -1,19 +1,3 @@
-"""
-leak_stats.py -- how much train/test leakage would an ordinary random split create?
-
-Self-contained: needs only numpy, pandas and pyyaml, reads the processed files in
-data/processed/, trains nothing and changes no other file. Runs in minutes on a laptop.
-
-For each dataset and seed it splits the data two ways and counts how many TEST rows have
-an IDENTICAL feature vector among the TRAINING rows:
-  random : ordinary class-stratified random split (15 % test), as most published work uses
-  group  : the paper's group-aware split (identical vectors kept on one side only)
-
-Usage (from the project folder):
-    python leak_stats.py
-    python leak_stats.py --datasets Edge-IIoTset CICIDS2017 --seeds 42 123 256
-Output: a table on screen and leak_stats.json (send me the json).
-"""
 import os, json, argparse
 import numpy as np
 import pandas as pd
@@ -31,9 +15,9 @@ a = ap.parse_args()
 def load(ds):
     df = pd.read_csv(os.path.join(a.processed_dir, f"{ds}_processed.csv"), low_memory=False)
     feat = [c for c in df.columns if c != "label"]
-    key = pd.util.hash_pandas_object(df[feat], index=False).values      # one id per distinct vector
+    key = pd.util.hash_pandas_object(df[feat], index=False).values
     lab = df["label"].astype(str).values
-    # same class exclusion as the paper (classes with too few distinct vectors)
+
     n_pat = pd.Series(key).groupby(lab).nunique()
     keep_cls = set(n_pat[n_pat >= a.min_unique_patterns].index)
     m = np.isin(lab, list(keep_cls))

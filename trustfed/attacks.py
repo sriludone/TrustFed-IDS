@@ -1,15 +1,3 @@
-"""
-attacks.py -- poisoning attacks. All use local RNGs (no global reseeding).
-
-Data-level   : label_flip -> attack labels flipped to the BENIGN index (the old
-               code flipped to class 0, which is benign only for CICIDS2017).
-Update-level : gaussian    -> delta + N(0, (scale*std(delta))^2)
-               sign_flip   -> -scale * delta
-               model_replacement -> label-flip training + update boosted by the
-                              number of participants (Bagdasaryan et al. style)
-Adaptive     : any attack starting at round `start_round` (honest before), to
-               test the EMA trust term against "honest-then-poison" clients.
-"""
 import numpy as np
 
 ATTACKS = ("none", "label_flip", "gaussian", "sign_flip", "model_replacement")

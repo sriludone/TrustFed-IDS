@@ -1,12 +1,3 @@
-"""
-models.py -- detector architectures.
-
-All models use GroupNorm, never BatchNorm. BatchNorm keeps running statistics
-in buffers that FedAvg-style weight vectors do not carry, so in the original
-code every non-DP run evaluated the global model with untouched running stats.
-GroupNorm has no buffers, works with Opacus per-sample gradients, and makes DP
-and non-DP runs use the SAME architecture (required for a fair ablation).
-"""
 import numpy as np
 import torch
 import torch.nn as nn
@@ -41,7 +32,6 @@ class ResidualMLP(nn.Module):
 
 
 class CNNBiLSTMAttention(nn.Module):
-    """GPU variant. Uses Opacus DPLSTM when dp=True (nn.LSTM is not DP-compatible)."""
     def __init__(self, n_features, n_classes, filters=(64, 128), lstm_hidden=128,
                  dropout=0.3, dp=False):
         super().__init__()
@@ -70,7 +60,6 @@ class CNNBiLSTMAttention(nn.Module):
 
 
 class BiLSTMClassifier(nn.Module):
-    """Centralised LSTM-IDS baseline (each feature treated as a time step)."""
     def __init__(self, n_features, n_classes, hidden=128, n_layers=2, dropout=0.3):
         super().__init__()
         self.lstm = nn.LSTM(1, hidden, n_layers, batch_first=True, bidirectional=True,
@@ -93,7 +82,6 @@ def get_model(n_features, n_classes, arch="residual_mlp", hidden=256, n_blocks=3
 
 
 def get_weights(model):
-    """Flat vector of ALL state (parameters + buffers) so nothing is left behind."""
     return np.concatenate([t.detach().cpu().numpy().ravel().astype(np.float32)
                            for t in model.state_dict().values()])
 

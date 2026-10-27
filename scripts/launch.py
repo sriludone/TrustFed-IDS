@@ -1,16 +1,7 @@
-"""Start the full campaign on THIS machine: one process per GPU, each running its shard
-through every experiment group in order. Same command on Linux and Windows.
-
-  python scripts/launch.py --first-k 0 --num-gpus 4 --total 20
-  python scripts/launch.py --first-k 0 --num-gpus 4 --total 20 --dry-run   # show the plan only
-
---first-k : shard number of this machine's first GPU (GPUs on machines numbered before it)
---total   : total GPUs used across ALL machines (identical everywhere)
-Logs: logs/shard_<K>.log. Finished runs are skipped, so re-running resumes."""
 import os, sys, argparse, subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# seeds: 5 for main and baselines, 3 for the sweeps (defaults in run_experiments.py)
+
 GROUPS = [["--group", "main"],
           ["--group", "baselines"],
           ["--group", "privacy"],

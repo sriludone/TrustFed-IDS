@@ -1,5 +1,3 @@
-"""Re-verify the explanation audit chains of finished main runs from their two files.
-   python scripts/verify_audit.py results/main"""
 import os, sys, json, glob, time
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

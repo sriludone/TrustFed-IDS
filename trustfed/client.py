@@ -1,20 +1,3 @@
-"""
-import warnings; warnings.filterwarnings("ignore")
-client.py -- local training for every FL method.
-
-Corrections:
-  * DP is applied to EVERY client whenever use_dp=True. The old rule
-    "skip DP if any local class has < 10 samples" silently disabled DP on
-    ~18 of 20 CICIDS2017 clients. Rare classes are handled by the loss weights.
-  * DP-SGD = Opacus per-sample clipping + Gaussian noise with Poisson sampling.
-    The cumulative epsilon over ALL rounds a client has participated in is
-    computed with the RDP accountant and returned every round.
-  * Class-weighted loss is computed per sample and averaged (reduction='none'
-    then mean), so each sample's gradient is independent of its batch peers.
-  * Identical training procedure for TrustFed and every baseline (same sampler,
-    loss, batch size, optimiser) -- the original baselines used plain CE at
-    batch 256 while TrustFed used weighted CE at 512.
-"""
 import time
 import numpy as np
 import torch
@@ -42,8 +25,6 @@ def dp_epsilon(sigma, q, steps, delta=1e-5):
 
 
 def calibrate_sigma(n, cfg):
-    """Noise multiplier that keeps THIS client within cfg['dp_target_eps'] even if it
-    took part in every round (upper bound; early stopping only lowers epsilon)."""
     from opacus.accountants.utils import get_noise_multiplier
     bs = min(cfg["batch_size"], n)
     q = bs / n
@@ -56,7 +37,6 @@ def calibrate_sigma(n, cfg):
 
 def local_train(global_w, X, y, cfg, n_features, n_classes, class_w, use_dp, mu,
                 dp_state=None, seed=0, device="cpu"):
-    """Returns (new_weights, info). dp_state is a dict mutated with cumulative steps."""
     torch.manual_seed(seed)
     model = get_model(n_features, n_classes, cfg["arch"], cfg["hidden"], cfg["n_blocks"],
                       dp=use_dp).to(device)
@@ -90,8 +70,8 @@ def local_train(global_w, X, y, cfg, n_features, n_classes, class_w, use_dp, mu,
     from contextlib import nullcontext
     mbs = cfg.get("max_physical_batch", 512)
     if use_dp and mbs and mbs < bs:
-        # Same logical batch (and identical privacy accounting); per-sample gradients are
-        # materialised in chunks of `mbs`, cutting peak memory ~bs/mbs times.
+
+
         from opacus.utils.batch_memory_manager import BatchMemoryManager
         mem = lambda: BatchMemoryManager(data_loader=dl, max_physical_batch_size=mbs, optimizer=opt)
     else:
@@ -99,7 +79,7 @@ def local_train(global_w, X, y, cfg, n_features, n_classes, class_w, use_dp, mu,
     for _ in range(cfg["local_epochs"]):
         with mem() as loader:
             for xb, yb in loader:
-                if len(yb) == 0:          # Poisson sampling can yield an empty batch
+                if len(yb) == 0:
                     continue
                 xb, yb = xb.to(device), yb.to(device)
                 opt.zero_grad()
@@ -112,7 +92,7 @@ def local_train(global_w, X, y, cfg, n_features, n_classes, class_w, use_dp, mu,
                     nn.utils.clip_grad_norm_(model.parameters(), cfg.get("grad_clip", 1.0))
                 opt.step()
                 skipped = bool(use_dp and getattr(opt, "_is_last_step_skipped", False))
-                if use_dp and mu > 0 and not skipped:   # proximal step: post-processing, no privacy cost
+                if use_dp and mu > 0 and not skipped:
                     with torch.no_grad():
                         for p, g0 in zip(model.parameters(), gparams):
                             p.add_(-(cfg["lr"] * mu) * (p - g0))
@@ -121,7 +101,7 @@ def local_train(global_w, X, y, cfg, n_features, n_classes, class_w, use_dp, mu,
     info = {"n": n, "loss": float(np.mean(losses)) if losses else 0.0, "steps": steps,
             "train_sec": round(time.time() - t0, 3), "dp": bool(use_dp)}
     if use_dp:
-        # steps counted from the Poisson loader (expected n/bs per epoch)
+
         dp_state["steps"] = dp_state.get("steps", 0) + cfg["local_epochs"] * len(dl)
         q = float(getattr(dl, "sample_rate", bs / n))
         dp_state["q"] = q
@@ -131,8 +111,8 @@ def local_train(global_w, X, y, cfg, n_features, n_classes, class_w, use_dp, mu,
         info["q"] = q
         model = model._module
     w_out = get_weights(model)
-    # Opacus wrappers hold reference cycles (hooks, per-sample grads); release them now,
-    # otherwise ~60 MB per client-round accumulates until the process runs out of memory.
+
+
     for p_ in model.parameters():
         if hasattr(p_, "grad_sample"):
             p_.grad_sample = None

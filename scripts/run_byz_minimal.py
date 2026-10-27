@@ -1,11 +1,3 @@
-"""Minimal Byzantine experiment: 30% label-flipping clients on Edge-IIoTset, all five
-aggregation rules under DP, three seeds (15 runs). Results go to results/byzantine/ with
-the same file names as the full byzantine group, so finished runs are reused if the full
-group is ever run later.
-
-  python scripts/run_byz_minimal.py --device cuda --shard 0/4      # one process per GPU
-  python scripts/run_byz_minimal.py --dry-run
-"""
 import os, sys, argparse
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); os.chdir(ROOT)
 import yaml

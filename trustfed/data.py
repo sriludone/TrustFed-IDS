@@ -1,24 +1,3 @@
-"""
-data.py -- preprocessing (raw -> processed) and the ONE shared federated split.
-
-Fixes relative to the original data_loader/training/baseline code:
-  * Identifier/leakage columns (IPs, ports, timestamps, flow IDs, MACs) are
-    dropped by name pattern; the dropped list is saved in <ds>_meta.json.
-  * Exact duplicates are removed, and feature-identical rows with CONFLICTING
-    labels are removed, BEFORE any split (duplicates across train/test inflate
-    scores, especially on CICIDS2017 and CICIoT2023).
-  * Native feature width per dataset (no padding to 76 -- each dataset is its
-    own federation, so a common width is unnecessary).
-  * Every method (TrustFed, all FL baselines, centralised, LSTM-IDS) receives
-    exactly the same test set, the same client partition and the same
-    per-client train/val split from prepare_federation(). The original code
-    built a different test set in training.py than in the baselines.
-  * A per-client validation split is used for model selection / early stopping
-    (federated validation). The test set is never used for selection.
-  * A small "root" set (FLTrust's server data) is ALWAYS carved out of the
-    training pool, even for methods that ignore it, so every method trains on
-    identical client data.
-"""
 import os, re, json
 import numpy as np
 import pandas as pd
@@ -36,7 +15,7 @@ RARE_THRESHOLDS = {"CICIDS2017": 50, "TON_IoT": 50, "CICIoT2023": 200, "Edge-IIo
 CAP = {"CICIDS2017": 2_000_000, "TON_IoT": 200_000, "CICIoT2023": 300_000,
        "Edge-IIoTset": 250_000}
 
-# ---------------------------------------------------------------- identifiers
+
 _ID_EXACT = {"ts", "time", "stime", "ltime", "timestamp", "frame.time", "flow id", "flow_id",
              "flowid", "src_ip", "dst_ip", "src_port", "dst_port", "source ip", "destination ip",
              "source port", "destination port", "sport", "dsport", "srcip", "dstip",
@@ -59,15 +38,7 @@ def identifier_columns(columns, keep=()):
     return out
 
 
-# ---------------------------------------------------------------- preprocessing
 def deduplicate(df, feat_cols, mode="keep"):
-    """Conflicts: rows with identical features but different labels are resolved by
-    MAJORITY (rows of the most frequent label for that feature vector are kept). The
-    old rule deleted every row of such a group, which erased whole classes (e.g.
-    Edge-IIoTset Fingerprinting).
-    mode='keep' : duplicates retained; leakage is prevented later by the group-aware
-                  split (identical feature vectors never span train and test).
-    mode='drop' : exact duplicates removed as well (robustness check)."""
     n0 = len(df)
     key = pd.util.hash_pandas_object(df[feat_cols], index=False).values
     tmp = pd.DataFrame({"k": key, "y": df["label"].values})
@@ -108,7 +79,6 @@ def _cap_with_floor(raw, cap, floor, seed=42):
 
 
 def preprocess_dataset(ds, max_rows_per_file=None, keep_columns=()):
-    """raw files -> data/processed/<ds>_processed.csv + <ds>_meta.json"""
     from . import raw_loaders as rl
     from .raw_loaders import merge_rare_classes
     loaders = {"CICIDS2017": rl.load_cicids2017, "TON_IoT": rl.load_ton_iot,
@@ -131,7 +101,7 @@ def preprocess_dataset(ds, max_rows_per_file=None, keep_columns=()):
     df = _cap_with_floor(df, CAP.get(ds, 1_000_000), 3 * thr)
     df = merge_rare_classes(df, min_samples=thr)
 
-    vt = VarianceThreshold(1e-5).fit(df[feat_cols].values)  # label-free filter
+    vt = VarianceThreshold(1e-5).fit(df[feat_cols].values)
     kept = [c for c, k in zip(feat_cols, vt.get_support()) if k]
     out = df[kept].copy()
     out.columns = [f"f{i}" for i in range(len(kept))]
@@ -152,12 +122,7 @@ def preprocess_dataset(ds, max_rows_per_file=None, keep_columns=()):
     return meta
 
 
-# ---------------------------------------------------------------- shared split
 def dirichlet_partition(y, n_clients, alpha, rng, min_size=0, max_tries=1000):
-    """Label-skewed Dirichlet partition. Redraws until every client holds at least
-    `min_size` rows (the NIID-Bench convention). Tiny clients carry almost no signal
-    and, under DP, need very large noise, so a floor makes the federation realistic
-    without changing the label skew that alpha controls."""
     for _ in range(max_tries):
         idx = [[] for _ in range(n_clients)]
         for c in np.unique(y):
@@ -177,9 +142,6 @@ def dirichlet_partition(y, n_clients, alpha, rng, min_size=0, max_tries=1000):
 def prepare_federation(dataset, n_clients=20, alpha=0.5, seed=42, test_size=0.15,
                        val_frac=0.15, root_per_class=100, processed_dir=None, scaler="quantile",
                        min_client_size=0, min_test_per_class=30, min_unique_patterns=10, split="group"):
-    """dataset 'CICIoT2023-8' = CICIoT2023 relabelled to its 8 official families.
-    scaler: 'quantile' (default; robust to the heavy tails of flow features, fitted on
-    the training pool only, output in [0,1]) or 'minmax'."""
     from .datasets import FAMILY_VIEWS
     base, fam = dataset, None
     for suffix, (b, mapping) in FAMILY_VIEWS.items():
@@ -190,9 +152,8 @@ def prepare_federation(dataset, n_clients=20, alpha=0.5, seed=42, test_size=0.15
     if fam:
         df["label"] = df["label"].map(lambda s: fam.get(s, s))
     feat = [c for c in df.columns if c.startswith("f")]
-    # A class needs several distinct feature vectors to be split into unseen-pattern
-    # train/test parts (e.g. Edge-IIoTset Fingerprinting has ONE distinct packet after
-    # identifier removal). Such classes are excluded from this view and reported.
+
+
     _k = pd.util.hash_pandas_object(df[feat], index=False)
     n_pat = pd.Series(_k.values).groupby(df["label"].astype(str).values).nunique()
     dropped_classes = {c: int(n) for c, n in n_pat.items() if n < min_unique_patterns}
@@ -207,9 +168,8 @@ def prepare_federation(dataset, n_clients=20, alpha=0.5, seed=42, test_size=0.15
 
     idx = np.arange(len(y))
     counts = np.bincount(y, minlength=len(class_names))
-    # Group-aware, class-stratified test split: rows with an identical feature vector
-    # form one group and go to train OR test, never both (no train/test leakage even
-    # though duplicates are kept). With fully de-duplicated data every group is one row.
+
+
     grp = pd.util.hash_pandas_object(df[feat], index=False).values
     test_mask = np.zeros(len(y), bool)
     for c in range(len(class_names)):
@@ -217,8 +177,8 @@ def prepare_federation(dataset, n_clients=20, alpha=0.5, seed=42, test_size=0.15
         if len(rows) < 2:
             continue
         if split == "random":
-            # Comparison protocol only: ordinary class-stratified random split of rows,
-            # so identical feature vectors may fall on both sides (reported as `leak`).
+
+
             target = int(round(max(test_size * len(rows), min(min_test_per_class, len(rows) // 3))))
             test_mask[rng.permutation(rows)[:max(1, min(target, len(rows) - 1))]] = True
             continue
@@ -226,7 +186,7 @@ def prepare_federation(dataset, n_clients=20, alpha=0.5, seed=42, test_size=0.15
         if len(g) < 2:
             continue
         target = max(test_size * len(rows), min(min_test_per_class, len(rows) // 3))
-        limit = max(1.5 * target, target + min_test_per_class)   # avoid one huge pattern overshooting
+        limit = max(1.5 * target, target + min_test_per_class)
         order = rng.permutation(len(g)); taken, chosen = 0, []
         for gi in order:
             if taken >= target or len(chosen) >= len(g) - 1:
@@ -234,7 +194,7 @@ def prepare_federation(dataset, n_clients=20, alpha=0.5, seed=42, test_size=0.15
             if taken + sizes[gi] > limit:
                 continue
             chosen.append(gi); taken += sizes[gi]
-        if not chosen:                                            # every pattern is too big: take the smallest
+        if not chosen:
             chosen = [int(np.argmin(sizes))]
         test_mask[rows[np.isin(inv, chosen)]] = True
     test, pool = idx[test_mask], idx[~test_mask]
@@ -275,9 +235,7 @@ def prepare_federation(dataset, n_clients=20, alpha=0.5, seed=42, test_size=0.15
             "client_sizes": [len(c["y_train"]) for c in clients]}
 
 
-# ---------------------------------------------------------------- synthetic
 def make_synthetic(name="SYNTH", n=24000, n_features=20, seed=0, processed_dir=None):
-    """Imbalanced multi-class stand-in for smoke tests (NOT for reporting)."""
     from sklearn.datasets import make_classification
     names = ["BENIGN", "DDoS", "PortScan", "Backdoor", "Recon-Sweep", "Ransomware"]
     w = [0.55, 0.2, 0.12, 0.07, 0.04, 0.02]

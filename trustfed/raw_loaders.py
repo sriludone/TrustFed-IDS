@@ -1,7 +1,3 @@
-"""
-data_loader.py  —  TrustFed-Agent
-"""
-
 import os, glob, json, warnings, re
 import numpy as np
 import pandas as pd
@@ -11,11 +7,7 @@ from collections import defaultdict
 
 warnings.filterwarnings("ignore")
 
-# Resolve the project root from THIS file's location (src/ -> project root)
-# rather than hardcoding a drive letter. The previous r"D:\TrustFed-Agent"
-# broke on any machine that unzipped the project elsewhere -- which is every
-# lab machine that uses C:, a different folder name, or a network share.
-# Override with the TRUSTFED_HOME environment variable if needed.
+
 BASE_DIR      = os.environ.get(
     "TRUSTFED_HOME",
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,12 +22,6 @@ for d in [PROCESSED_DIR, PARTITION_DIR, RESULTS_DIR,
           os.path.join(RESULTS_DIR, "plots")]:
     os.makedirs(d, exist_ok=True)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Generic file reader
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _read_any(filepath, max_rows=None, encoding=None):
     for sep in [",", "\t", ";"]:
@@ -59,10 +45,6 @@ def _find_files(folder):
     return list(seen.keys())
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Dataset loaders
-# ─────────────────────────────────────────────────────────────────────────────
-
 def load_cicids2017(max_rows_per_file=None):
     path  = os.path.join(RAW_DIR, "CICIDS2017")
     files = _find_files(path)
@@ -70,7 +52,7 @@ def load_cicids2017(max_rows_per_file=None):
     print(f"  [CICIDS2017] {len(files)} files")
     frames = []
     for f in files:
-        df = _read_any(f, encoding="cp1252")   # CICIDS2017 CSVs are Windows-1252 encoded
+        df = _read_any(f, encoding="cp1252")
         if df is None:
             continue
         df.columns = df.columns.str.strip()
@@ -134,14 +116,7 @@ def load_ciciot2023(max_rows_per_file=None):
     files = _find_files(path)
     assert files, f"No files in {path}"
 
-    # CICIoT2023's full official dataset is ~46.7 MILLION rows across these
-    # 309 files. Loading everything before downsampling causes OOM during
-    # pd.concat (confirmed: 46,776,700 rows x 9 numeric cols needs 3+ GiB
-    # contiguous allocation, which fails on typical machines). We therefore
-    # ALWAYS cap rows read per file here — even outside --quick mode — so
-    # the intermediate raw dataframe stays memory-safe. The existing
-    # stratified CAP=300,000 downsampling in run_pipeline() still does the
-    # final class-balanced reduction to the target dataset size afterward.
+
     effective_cap = max_rows_per_file if max_rows_per_file is not None else 15_000
     print(f"  [CICIoT2023] {len(files)} files ... (cap={effective_cap:,} rows/file "
           f"to stay memory-safe on this ~46.7M-row dataset)")
@@ -200,16 +175,7 @@ def load_edge_iiotset(max_rows_per_file=None):
             "arp.src.proto_ipv4","arp.dst.hw.mac","arp.src.hw.mac",
             "eth.dst","eth.src","eth.type"}
 
-    # The official Edge-IIoTset distribution ships THREE incompatible groups
-    # of files under this folder:
-    #   1. "Attack traffic/*.csv"                 — raw per-attack-type dumps
-    #   2. "Normal traffic/<sensor>/*.csv"         — raw per-sensor telemetry
-    #      (different schema entirely — e.g. Distance.csv has 1-2 columns)
-    #   3. "Selected dataset for ML and DL/*.csv"  — canonical pre-aggregated
-    #      ML-ready file that ALREADY contains all attack + normal rows
-    # A naive recursive glob over the whole folder concatenates all three,
-    # silently double/triple-counting rows and mixing schemas. We therefore
-    # explicitly prefer the canonical file and ignore the rest when present.
+
     canonical_dir = os.path.join(path, "Selected dataset for ML and DL")
     canonical_candidates = [
         os.path.join(canonical_dir, "DNN-EdgeIIoT-dataset.csv"),
@@ -247,22 +213,17 @@ def load_edge_iiotset(max_rows_per_file=None):
         else:
             df["label"] = "Normal"
         df = df.drop(columns=[c for c in DROP if c in df.columns], errors="ignore")
-        # Keep only genuine numeric features. Columns like tcp.payload,
-        # tcp.options, mqtt.msg, mqtt.topic, mqtt.protoname are RAW STRINGS /
-        # packet payloads (e.g. 512-char hex dumps) — they are identifiers,
-        # not features, and must be dropped (NOT coerced to numbers, which
-        # overflows). The ~50 remaining numeric columns carry the real signal.
-        # A handful of numeric-as-string fields (e.g. hex flag counters) are
-        # recovered first via to_numeric before the object drop.
+
+
         for c in list(df.columns):
             if c in ("label", "dataset"):
                 continue
-            # Robust across pandas versions (object vs 'str' dtype): treat any
-            # non-numeric column as a candidate for coercion-or-drop.
+
+
             if not pd.api.types.is_numeric_dtype(df[c]):
                 coerced = pd.to_numeric(df[c], errors="coerce")
-                # Keep only if it was a numeric-as-string field; drop raw
-                # payload/text columns (tcp.payload, mqtt.topic, etc.).
+
+
                 if coerced.notna().mean() >= 0.5:
                     df[c] = coerced
                 else:
@@ -278,19 +239,8 @@ def load_edge_iiotset(max_rows_per_file=None):
     return df
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Merge ultra-rare classes to reduce class count and improve trainability
-# ─────────────────────────────────────────────────────────────────────────────
-
 def merge_rare_classes(df: pd.DataFrame, min_samples: int = 100,
                        merged_name: str = "Rare_Attack") -> pd.DataFrame:
-    """
-    Merge any class with fewer than min_samples into a single merged_name class.
-    This is critical for CICIoT2023 which has classes with 82-148 samples.
-    Those classes cannot be learned reliably in FL with non-IID splits.
-    After merging, no class has fewer than min_samples, removing the
-    extreme imbalance that causes training collapse.
-    """
     counts = df["label"].value_counts()
     rare   = counts[counts < min_samples].index.tolist()
     if rare:
@@ -299,10 +249,6 @@ def merge_rare_classes(df: pd.DataFrame, min_samples: int = 100,
         df["label"] = df["label"].apply(lambda x: merged_name if x in rare else x)
     return df
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Feature alignment
-# ─────────────────────────────────────────────────────────────────────────────
 
 _FEAT_CACHE = {}
 
@@ -342,10 +288,6 @@ def align_features(df: pd.DataFrame, ds_name: str,
     return num
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Label encoding
-# ─────────────────────────────────────────────────────────────────────────────
-
 def encode_labels(df, le=None):
     if le is None:
         le = LabelEncoder()
@@ -356,10 +298,6 @@ def encode_labels(df, le=None):
     label_map = {int(i): str(c) for i, c in enumerate(le.classes_)}
     return df, le, label_map
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Non-IID Dirichlet partitioning
-# ─────────────────────────────────────────────────────────────────────────────
 
 def partition_non_iid(df, n_clients=20, alpha=0.5, seed=42):
     np.random.seed(seed)
@@ -396,15 +334,7 @@ def partition_non_iid(df, n_clients=20, alpha=0.5, seed=42):
     return partition
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Class utilities
-# ─────────────────────────────────────────────────────────────────────────────
-
 def compute_class_weights(y: np.ndarray, n_classes: int) -> np.ndarray:
-    """
-    Sqrt inverse-frequency weights.
-    Prevents extreme ratios (200x) while boosting minority classes.
-    """
     w = np.ones(n_classes, dtype="float32")
     if len(y) == 0:
         return w
@@ -416,10 +346,6 @@ def compute_class_weights(y: np.ndarray, n_classes: int) -> np.ndarray:
     w /= w.mean()
     return np.clip(w, 0.1, 20.0)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Client array retrieval
-# ─────────────────────────────────────────────────────────────────────────────
 
 def get_client_arrays(df, partition, client_id):
     feat_cols = [f"f{i}" for i in range(N_FEATURES)]
@@ -436,10 +362,6 @@ def get_client_arrays(df, partition, client_id):
            safe(partition[client_id]["val"]), \
            safe(partition[client_id]["test"])
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Save / load
-# ─────────────────────────────────────────────────────────────────────────────
 
 def save_processed(df, name):
     out = os.path.join(PROCESSED_DIR, f"{name}_processed.csv")
@@ -465,10 +387,6 @@ def load_partition_json(name):
     return partition, label_map
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Master pipeline
-# ─────────────────────────────────────────────────────────────────────────────
-
 def run_pipeline(n_clients=20, alpha=0.5, max_rows=None, datasets=None):
     if datasets is None:
         datasets = ["CICIDS2017", "TON_IoT", "CICIoT2023", "Edge-IIoTset"]
@@ -480,11 +398,11 @@ def run_pipeline(n_clients=20, alpha=0.5, max_rows=None, datasets=None):
         "Edge-IIoTset": load_edge_iiotset,
     }
 
-    # Merge rare classes per dataset before global encoding
+
     RARE_THRESHOLDS = {
-        "CICIDS2017":  50,    # Heartbleed(11), Infiltration(36) → Rare_Attack
+        "CICIDS2017":  50,
         "TON_IoT":     50,
-        "CICIoT2023":  200,   # Many classes < 200 samples → merge
+        "CICIoT2023":  200,
         "Edge-IIoTset": 100,
     }
 
@@ -501,20 +419,14 @@ def run_pipeline(n_clients=20, alpha=0.5, max_rows=None, datasets=None):
     for ds in datasets:
         print(f"  Loading {ds} ...")
         raw = loaders[ds](max_rows_per_file=max_rows)
-        # Merge rare classes before global label collection
+
         raw = merge_rare_classes(raw, min_samples=RARE_THRESHOLDS.get(ds, 100))
         raw_dfs[ds] = raw
         all_labels.update(raw["label"].astype(str).unique())
 
     print(f"\n[Pass 1] Unique labels ({len(all_labels)}): {sorted(all_labels)}")
 
-    # The post-downsampling re-merge (see below) can introduce "Rare_Attack"
-    # for datasets whose rare classes were still above threshold in the full
-    # raw set -- CICIoT2023 is the case: Recon-PingSweep and Uploading_Attack
-    # only fall under 200 samples AFTER capping to 300k. If the encoder is
-    # fitted here without that label, encode_labels() maps it to "unknown",
-    # which is also absent, and transform() raises KeyError: 'unknown'.
-    # Reserving both symbols up front makes the vocabulary closed.
+
     all_labels.add("Rare_Attack")
     all_labels.add("unknown")
 
@@ -531,16 +443,8 @@ def run_pipeline(n_clients=20, alpha=0.5, max_rows=None, datasets=None):
         cap = CAP.get(ds, 1_000_000)
         if len(raw) > cap:
             print(f"  Sampling {cap:,} from {len(raw):,} rows ...")
-            # Floor-protect classes that are already small: pure proportional
-            # sampling shrinks them by the same ratio as everything else,
-            # which can push an already-merged "Rare_Attack" bucket (e.g.
-            # CICIDS2017: 68 samples) below its own rarity threshold (50)
-            # purely from the sampling ratio (68 * 0.707 = 48 < 50). A
-            # later re-merge can't rescue this since it's already the
-            # merge target with no neighbor to combine into. Instead, any
-            # class at or below 3x its dataset's threshold is kept IN
-            # FULL here; only the remaining larger classes are
-            # proportionally trimmed to make up the overall budget.
+
+
             floor = 3 * RARE_THRESHOLDS.get(ds, 100)
             try:
                 counts_now = raw["label"].value_counts()
@@ -564,13 +468,7 @@ def run_pipeline(n_clients=20, alpha=0.5, max_rows=None, datasets=None):
             except Exception:
                 raw = raw.sample(n=min(cap, len(raw)), random_state=42).reset_index(drop=True)
 
-        # Re-merge rare classes AFTER downsampling. The proportional
-        # stratified sample above can shrink an originally-safe class
-        # below its trainability threshold (e.g., CICIoT2023's
-        # Uploading_Attack: ~1,500 in the 4.5M raw set -> just 82 after
-        # capping to 300k). This second pass guarantees the threshold is
-        # respected in the data actually saved and used for FL training,
-        # not just in the pre-downsampling raw set.
+
         raw = merge_rare_classes(raw, min_samples=RARE_THRESHOLDS.get(ds, 100))
 
         df = align_features(raw, ds, n_features=N_FEATURES)

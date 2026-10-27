@@ -1,20 +1,3 @@
-"""
-audit.py -- per-client explanation hash chains with server-side anchoring.
-
-Trust model (state this in the paper):
-  * Each CLIENT keeps its own append-only chain. Entry t commits to
-    SHA-256(SHAP vector) and to entry t-1. The client keeps the SHAP vector so the
-    digest can be recomputed at audit time.
-  * Each round the SERVER records the client's new chain head (anchoring).
-  * An auditor detects (a) any edit to a stored SHAP vector or chain entry, by
-    recomputation, and (b) a client rewriting its whole chain after submission, by
-    comparing heads with the server's anchors. Collusion of client AND server, or a
-    client lying at computation time, is NOT detected.
-
-Storage: chain entries and anchors go into the run's single JSON file; all SHAP
-vectors of a run go into ONE compressed file <run>.audit.npz (key c<client>_r<round>).
-scripts/verify_audit.py re-verifies a finished run from those two files.
-"""
 import copy, json, hashlib, time
 import numpy as np
 
@@ -35,7 +18,6 @@ def vkey(cid, rnd):
 
 
 class AuditLedger:
-    """All clients' chains for one run, kept in memory and saved once at the end."""
 
     def __init__(self):
         self.entries, self.vectors, self.heads, self.anchors = {}, {}, {}, {}
@@ -50,7 +32,7 @@ class AuditLedger:
         self.entries.setdefault(cid, []).append(e)
         self.vectors[vkey(cid, rnd)] = v
         self.heads[cid] = e["hash"]
-        self.anchors.setdefault(cid, {})[str(rnd)] = e["hash"]       # server records the head
+        self.anchors.setdefault(cid, {})[str(rnd)] = e["hash"]
         return e["hash"], time.time() - t0
 
     def save_vectors(self, path):
@@ -79,8 +61,6 @@ def verify_chain(entries, vectors, anchors=None):
 
 
 def tamper_suite(entries, vectors, anchors):
-    """Applies each tampering scenario to a COPY of one client's chain and reports
-    whether verification detects it."""
     res = []
     mid = entries[len(entries) // 2]
     k = vkey(mid["cid"], mid["round"])

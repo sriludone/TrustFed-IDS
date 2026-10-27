@@ -1,8 +1,3 @@
-"""
-centralised.py -- non-federated reference models (Centralised ResidualMLP, LSTM-IDS).
-Same data as the FL runs: train = union of client train splits, validation =
-union of client val splits, identical test set. Epoch selected on VALIDATION.
-"""
 import os, json, time
 import numpy as np
 import torch
@@ -15,7 +10,6 @@ from .metrics import evaluate
 
 
 def run_centralised(fed, cfg, seed, arch="residual_mlp", epochs=None, verbose=True):
-    """Returns (summary, best_weights, compact_epoch_log); writes nothing."""
     t_run = time.time(); torch.manual_seed(seed)
     X = np.concatenate([c["X_train"] for c in fed["clients"]]); y = np.concatenate([c["y_train"] for c in fed["clients"]])
     Xv = np.concatenate([c["X_val"] for c in fed["clients"]]); yv = np.concatenate([c["y_val"] for c in fed["clients"]])

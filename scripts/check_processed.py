@@ -1,5 +1,3 @@
-"""Summarise data/processed/*_meta.json. Send me this output after preprocessing.
-   python scripts/check_processed.py"""
 import os, sys, json, glob
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from trustfed.data import PROCESSED_DIR

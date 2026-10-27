@@ -1,7 +1,3 @@
-"""End-to-end check on synthetic data (CPU, ~10 min). NOT for reporting.
-   python scripts/smoke_test.py                 # all stages
-   python scripts/smoke_test.py --stage methods42   # one stage: methods42 methods123
-                                                  #   methods256 attacks (or attacks:<rule>) preprocess tables"""
 import os, sys, json, shutil, time, subprocess
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT)
 import numpy as np, yaml
@@ -31,7 +27,7 @@ def save(g, m, summ, logs, atk="none", fr=0.0, st=1, s=42, extra=None):
     return path
 fails = []
 
-# 1. every method, two seeds for paired stats
+
 for s in (42, 123, 256):
     if not run_stage(f"methods{s}"):
         continue
@@ -58,7 +54,7 @@ for s in (42, 123, 256):
         save("baselines", m, summ, logs, s=s)
 print(f"methods ok ({time.time()-T0:.0f}s)")
 
-# 2. every attack against TrustFed and two robust rules, DP forced on
+
 _ATK = ("trustfed", "multikrum", "flame", "fltrust", "foolsgold")
 _sel = _ATK if STAGE in ("all", "attacks") else tuple(m for m in _ATK if STAGE == f"attacks:{m}")
 for m in _sel:
@@ -71,13 +67,13 @@ for m in _sel:
             fails.append(f"{m}/{atk}: no detection metric")
 print(f"attacks ok ({time.time()-T0:.0f}s)")
 
-# 3. label-flip actually targets benign
+
 from trustfed.attacks import label_flip
 yy = label_flip(fed["clients"][0]["y_train"], fed["benign_idx"], 1.0, np.random.default_rng(0))
 if not (yy == fed["benign_idx"]).all():
     fails.append("label flip did not map every attack label to benign")
 
-# 4. raw preprocessing on fake raw files with the real column names / label strings
+
 if run_stage("preprocess"):
     import tempfile
     tmp = tempfile.mkdtemp()
@@ -100,7 +96,7 @@ if run_stage("preprocess"):
     if "PREPROCESS OK" not in r2.stdout:
         fails.append("raw preprocessing failed: " + r.stderr[-300:] + r2.stderr[-300:])
 
-# 5. tables
+
 if run_stage("tables"):
     r = subprocess.run([sys.executable, os.path.join(ROOT, "make_tables.py"), "--results", R],
                        capture_output=True, text=True)

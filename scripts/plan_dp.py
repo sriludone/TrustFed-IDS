@@ -1,6 +1,3 @@
-"""Predict per-client epsilon BEFORE training (no model is trained).
-   python scripts/plan_dp.py --dataset CICIDS2017 --sigma 2.77 --epochs 5 --batch 512
-"""
 import os, sys, argparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np

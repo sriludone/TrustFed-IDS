@@ -1,14 +1,3 @@
-"""raw -> data/processed (exact class definitions, identifier drop, one-hot, dedup, per-class cap).
-
-Expected raw layout (any sub-folder depth):
-  data/raw/Edge-IIoTset/**/DNN-EdgeIIoT-dataset.csv
-  data/raw/CICIoT2023/**/*.csv            (the CSV release, 'label' column, 34 classes)
-  data/raw/CICIDS2017/**/*.csv            (MachineLearningCVE or TrafficLabelling CSVs)
-
-  python scripts/preprocess.py --all
-  python scripts/preprocess.py --dataset CICIoT2023 --cap 25000
-  python scripts/preprocess.py --dataset CICIoT2023 --drop-extra IAT   # leakage check (see README)
-Then open data/processed/<ds>_meta.json and check the dropped columns and dedup counts."""
 import os, sys, argparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from trustfed.datasets import preprocess

@@ -1,21 +1,3 @@
-"""
-run_experiments.py -- every experiment in the paper, resumable.
-
-  python run_experiments.py --group main      [--datasets ...] [--seeds 42 123 256 512 1024]
-  python run_experiments.py --group baselines
-  python run_experiments.py --group byzantine [--datasets CICIDS2017]
-  python run_experiments.py --group ablation
-  python run_experiments.py --group alpha
-  python run_experiments.py --group privacy   # epsilon in {1, 3, 8, inf}
-  python run_experiments.py --group all --dry-run      # list runs, no training
-  python run_experiments.py --group byzantine --shard 0/3   # split across 3 machines
-
-Each run writes ONE file: results/<group>/<run name>.json (main runs also write one
-<run name>.audit.npz). A run whose .json exists is skipped, so the campaign can be
-stopped and restarted at any time. To merge machines, copy all files into the same
-results/<group>/ folders. Then run
-  python make_tables.py
-"""
 import os, sys, json, argparse, itertools, time
 import yaml
 
@@ -26,14 +8,14 @@ from trustfed.io import run_name, run_path, write_json
 
 SEEDS5 = [42, 123, 256, 512, 1024]
 SEEDS3 = [42, 123, 256]
-# Exactly the experiments reported in the Scientific Reports manuscript
+
 BASELINES = ["centralised", "fedavg", "fedprox", "dp_fedavg", "fltrust", "flame"]
-ROBUST = ["trustfed", "dp_fedavg", "multikrum", "fltrust", "flame"]          # poisoning comparison
+ROBUST = ["trustfed", "dp_fedavg", "multikrum", "fltrust", "flame"]
 ABLATIONS = ["trustfed", "abl_uniform", "abl_no_trust", "abl_no_kl", "abl_no_cos", "abl_no_ema"]
 
 
 def plan(group, cfg, datasets, seeds, byz_datasets):
-    R = []  # (group, dataset, method, attack, frac, start, alpha, seed, extras)
+    R = []
     if group in ("main", "all"):
         for ds, s in itertools.product(datasets, seeds or SEEDS5):
             R.append(("main", ds, "trustfed", "none", 0.0, 1, cfg["alpha"], s, {"audit": True}))
@@ -45,14 +27,14 @@ def plan(group, cfg, datasets, seeds, byz_datasets):
             R.append(("privacy", ds, "trustfed", "none", 0.0, 1, cfg["alpha"], s, {"eps": e}))
         for ds, s in itertools.product(datasets, seeds or SEEDS3):
             R.append(("privacy", ds, "abl_no_dp", "none", 0.0, 1, cfg["alpha"], s, {"eps": "inf"}))
-    if group in ("byzantine", "all"):      # 30 % label-flipping clients, all rules under DP
+    if group in ("byzantine", "all"):
         for ds, m, s in itertools.product(byz_datasets, ROBUST, seeds or SEEDS3):
             R.append(("byzantine", ds, m, "label_flip", 0.3, 1, cfg["alpha"], s, {"force_dp": True}))
     if group in ("ablation", "all"):
         for ds, m, s in itertools.product(datasets, ABLATIONS, seeds or SEEDS3):
             R.append(("ablation", ds, m, "none", 0.0, 1, cfg["alpha"], s, {}))
             R.append(("ablation", ds, m, "label_flip", 0.3, 1, cfg["alpha"], s, {}))
-    if group == "randomsplit":       # reviewer request: same pipeline under an ordinary random split
+    if group == "randomsplit":
         for ds, m, s in itertools.product(datasets, ["trustfed", "dp_fedavg", "centralised"], seeds or SEEDS3):
             R.append(("randomsplit", ds, m, "none", 0.0, 1, cfg["alpha"], s, {"split": "random"}))
     return R
@@ -126,7 +108,7 @@ def main():
                                force_dp=ex.get("force_dp"), audit=ex.get("audit", False),
                                audit_file=audit_file)
         record = {"group": g, "eps_setting": ex.get("eps"), **summ, "rounds": logs}
-        write_json(path, record)      # written last and atomically: a crash leaves no partial result
+        write_json(path, record)
 
 
 if __name__ == "__main__":

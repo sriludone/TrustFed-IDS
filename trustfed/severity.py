@@ -1,10 +1,3 @@
-"""
-severity.py -- maps class names to severity levels and identifies the benign class (dataset metadata).
-
-0 = benign, 1 = low severity (reconnaissance / probing), 2 = high severity.
-EDIT THIS FILE if your label names differ; the mapping used in every run is
-written to the run log so it can be reported in the Supplementary.
-"""
 import re
 
 BENIGN = re.compile(r"^(benign|normal|benigntraffic|benign_traffic)$", re.I)

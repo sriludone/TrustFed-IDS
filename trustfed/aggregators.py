@@ -1,9 +1,3 @@
-"""
-aggregators.py -- every aggregation rule operates on client DELTAS (w_i - w_t)
-and returns (aggregated_delta, info). info["flagged"] lists clients the rule
-rejected or zero-weighted (used for Byzantine detection metrics); None means
-the rule makes no client-level decision (median, trimmed mean, FedAvg).
-"""
 import numpy as np
 
 
@@ -17,7 +11,6 @@ def fedavg(ups, **_):
 
 
 def uniform(ups, **_):
-    """Equal weight per participating client (no sample-size weighting, no trust)."""
     return _stack(ups).mean(0), {"flagged": None}
 
 
@@ -55,7 +48,6 @@ def trimmed_mean(ups, f, **_):
 
 
 def flame(ups, rng, noise_lambda=0.001, **_):
-    """FLAME (Nguyen et al. 2022): HDBSCAN on cosine distance, norm clipping, noise."""
     from sklearn.cluster import HDBSCAN
     D = _stack(ups); n = len(D)
     Nn = D / np.clip(np.linalg.norm(D, axis=1, keepdims=True), 1e-12, None)
@@ -73,7 +65,6 @@ def flame(ups, rng, noise_lambda=0.001, **_):
 
 
 def fltrust(ups, server_delta, **_):
-    """FLTrust (Cao et al. 2021): ReLU-cosine trust + magnitude normalisation."""
     D = _stack(ups); g = server_delta; gn = np.linalg.norm(g)
     if gn == 0:
         return D.mean(0), {"flagged": []}
@@ -86,7 +77,6 @@ def fltrust(ups, server_delta, **_):
 
 
 def foolsgold(ups, history, **_):
-    """FoolsGold (Fung et al. 2020) with pardoning and logit, on cumulative history."""
     H = np.stack([history[u["cid"]] for u in ups]); n = len(H)
     if n == 1:
         return ups[0]["delta"], {"flagged": []}

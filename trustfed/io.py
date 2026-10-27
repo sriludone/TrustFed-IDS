@@ -1,13 +1,3 @@
-"""
-io.py -- ONE result file per run, in a flat folder per experiment group:
-
-    results/<group>/<dataset>__<method>__<attack>-f<frac>-s<start>[-eps<e>]__a<alpha>__seed<seed>.json
-    results/main/...json  (+ one <same name>.audit.npz holding the run's SHAP vectors)
-
-Merging results from several machines = copying all files into the same folders
-(names never collide). A run is "done" when its .json exists; files are written
-atomically, so an interrupted run never leaves a half-written result.
-"""
 import os, json, glob, tempfile
 
 

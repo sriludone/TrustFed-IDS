@@ -1,6 +1,3 @@
-"""Writes small FAKE raw files that mimic the real column names, label strings and
-quirks of each dataset (encodings, leading spaces, duplicate columns, inf, identifiers,
-categorical fields, exact duplicates). Used only to test the preprocessing code."""
 import os, sys, numpy as np, pandas as pd
 R = sys.argv[1] if len(sys.argv) > 1 else "fixtures_raw"
 rng = np.random.default_rng(0)
@@ -10,10 +7,10 @@ def blobs(labels, sizes, d, heavy=True):
     for k, (lab, n) in enumerate(zip(labels, sizes)):
         mu = rng.normal(0, 1.2, d)
         Z = rng.normal(mu, 1.0, (n, d))
-        X.append(np.exp(Z) if heavy else Z); y += [lab] * n          # log-normal, heavy-tailed
+        X.append(np.exp(Z) if heavy else Z); y += [lab] * n
     return np.vstack(X), np.array(y)
 
-# ---------------- CICIDS2017 (TrafficLabelling style, cp1252, en dash in labels)
+
 labs = ["BENIGN", "DoS Hulk", "PortScan", "DDoS", "DoS GoldenEye", "FTP-Patator", "SSH-Patator",
         "DoS slowloris", "DoS Slowhttptest", "Bot", "Web Attack \u2013 Brute Force",
         "Web Attack \u2013 XSS", "Infiltration", "Web Attack \u2013 Sql Injection", "Heartbleed"]
@@ -31,13 +28,13 @@ df.insert(3, " Destination IP", "192.168.10.50"); df.insert(4, " Destination Por
 df.insert(5, " Timestamp", "3/7/2017 8:55"); df[" Fwd Header Length.1"] = df[" Fwd Header Length"]
 df.loc[::97, "Flow Bytes/s"] = np.inf
 df[" Label"] = y
-df = pd.concat([df, df.sample(800, random_state=1)])                       # exact duplicates
+df = pd.concat([df, df.sample(800, random_state=1)])
 os.makedirs(f"{R}/CICIDS2017", exist_ok=True)
 sh = df.sample(frac=1, random_state=2); n3 = len(sh)//3
 for i, part in enumerate([sh.iloc[:n3], sh.iloc[n3:2*n3], sh.iloc[2*n3:]]):
     part.to_csv(f"{R}/CICIDS2017/day{i}.pcap_ISCX.csv", index=False, encoding="cp1252")
 
-# ---------------- CICIoT2023 (34 labels, 46 features, several CSV files)
+
 from trustfed_fam import FAM
 labs = list(FAM); sizes = [3000 if l == "BenignTraffic" else (1500 if l.startswith("DDoS") else 120) for l in labs]
 sizes[labs.index("Uploading_Attack")] = 40; sizes[labs.index("Recon-PingSweep")] = 60
@@ -54,7 +51,7 @@ sh = df.sample(frac=1, random_state=3); n4 = len(sh)//4
 for i, part in enumerate([sh.iloc[k*n4:(k+1)*n4 if k<3 else None] for k in range(4)]):
     part.to_csv(f"{R}/CICIoT2023/part-{i:05d}.csv", index=False)
 
-# ---------------- Edge-IIoTset (DNN file, categorical protocol fields, identifiers)
+
 labs = ["Normal", "DDoS_UDP", "DDoS_ICMP", "SQL_injection", "Password", "Vulnerability_scanner", "DDoS_TCP",
         "DDoS_HTTP", "Uploading", "Backdoor", "Port_Scanning", "XSS", "Ransomware", "MITM", "Fingerprinting"]
 sizes = [6000, 1200, 1100, 500, 500, 500, 500, 500, 400, 300, 300, 300, 200, 60, 50]

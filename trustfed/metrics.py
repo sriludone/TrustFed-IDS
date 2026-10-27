@@ -1,11 +1,3 @@
-"""
-metrics.py -- evaluation metrics.
-
-Two false-positive measures are reported because they answer different questions:
-  fpr_macro   : mean one-vs-rest FPR over classes (what the old code reported).
-  benign_far  : fraction of BENIGN flows predicted as ANY attack. This is the
-                number the paper's "flows wrongly acted on per day" argument needs.
-"""
 import numpy as np
 from sklearn.metrics import (accuracy_score, balanced_accuracy_score, f1_score,
                              precision_score, recall_score, roc_auc_score,

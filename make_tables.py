@@ -1,10 +1,3 @@
-"""
-make_tables.py -- turns results/ (one JSON per run) into every table and figure.
-Outputs in results/tables/: CSV + LaTeX per table, figures as PDF/PNG, and
-all_runs.csv (one row per run -- the single file to share).
-Statistics: paired over seeds; Wilcoxon signed-rank and paired t-test vs TrustFed,
-Holm-corrected within each table; effect = mean difference (percentage points).
-"""
 import os, sys, argparse
 import numpy as np
 import pandas as pd
@@ -79,7 +72,7 @@ def to_tex(d, name, caption):
 
 by_file = {os.path.basename(r["_file"]): r for r in RUNS}
 
-# ---- main results + privacy budget
+
 m = df[df.group == "main"]
 if len(m):
     t = m.groupby("dataset").apply(lambda g: pd.Series({
@@ -97,7 +90,7 @@ if len(m):
         pd.DataFrame(recs[0]["test"]["confusion_matrix"], index=names, columns=names).to_csv(
             os.path.join(OUT, f"confusion_{ds}_seed{recs[0]['seed']}.csv"))
 
-# ---- baselines (+ TrustFed from main)
+
 if len(df[df.group == "baselines"]):
     b = pd.concat([df[df.group == "baselines"], m])
     rows = []
@@ -109,7 +102,7 @@ if len(df[df.group == "baselines"]):
     to_tex(pd.DataFrame(rows), "table_baselines", "Macro-F1 per dataset (mean+-sd over seeds)")
     to_tex(paired(b, "trustfed", "f1").round(4), "stats_baselines_f1", "Paired tests vs TrustFed (macro-F1)")
 
-# ---- privacy
+
 pv = df[df.group == "privacy"]
 if len(pv):
     t = pv.groupby(["dataset", "eps_setting"]).apply(lambda g: pd.Series({
@@ -117,7 +110,7 @@ if len(pv):
         "measured eps (max)": ms(g.eps_max), "Seeds": len(g)})).reset_index()
     to_tex(t, "table_privacy", "Privacy-utility trade-off (target epsilon per client, worst case)")
 
-# ---- Byzantine
+
 z = df[df.group == "byzantine"]
 if len(z):
     z = z.assign(setting=z.attack + "@" + (100 * z.frac).round().astype(int).astype(str) + "%"
@@ -128,7 +121,7 @@ if len(z):
         lambda g: f"{ms(g.detect)} / {ms(g.false_flag)}").unstack().reset_index(),
         "table_byzantine_detection", "Detection rate / honest false-flag rate")
 
-# ---- ablation
+
 ab = df[df.group == "ablation"]
 if len(ab):
     to_tex(ab.groupby(["dataset", "method", "attack"]).f1.apply(ms).unstack().reset_index(),
@@ -136,13 +129,13 @@ if len(ab):
     for atk in ab.attack.unique():
         to_tex(paired(ab[ab.attack == atk], "trustfed", "f1").round(4), f"stats_ablation_{atk}", "")
 
-# ---- alpha
+
 al = df[df.group == "alpha"]
 if len(al):
     to_tex(al.groupby(["alpha", "method"]).f1.apply(ms).unstack().reset_index(), "table_alpha",
            "Heterogeneity sweep (macro-F1)")
 
-# ---- audit
+
 au = [{"dataset": r["dataset"], "seed": r["seed"], **x} for r in RUNS for x in r.get("audit_tamper_suite", [])]
 if au:
     au = pd.DataFrame(au)
@@ -152,7 +145,7 @@ if au:
     if shap_s:
         print(f"  audit: mean explanation time per client-round {np.mean(shap_s):.3f}s")
 
-# ---- figures
+
 try:
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     if len(m):
